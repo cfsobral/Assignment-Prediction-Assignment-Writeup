@@ -1,0 +1,162 @@
+---
+title: "Prediction_Assignment_Writeup"
+author: "Claudio Sobral"
+date: "11/10/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## INTRODUCTION
+
+The objetive this assigment is create an machine learnning to test 20 cases available in the Course Project Prediction Quiz. To help us to solve this, we will take basead on the academic research information found at the link <http://groupware.les.inf.puc-rio.br/har>, as well as other sources searched on the Internet, which will be mentioned at the end of this page. 
+
+The Weight Lifting Exercises Dataset will be our main data, where it was divided into two other subset: training and testing data, found  assigment also consists of using the information from the Weight Lifting Exercise Dataset. Where divided the data into two datasets, one with training data and another testing data. However, what does Weight Lifting Exercises Dataset consist of? Following is a brief concept proposed by the team (Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H.) in Wearable Computing: Accelerometers’ Data Classification of Body Postures and Movements rehearsal. 
+
+##### *'[...]the Weight Lifting Exercises dataset is to investigate "how (well)" an activity was performed by the wearer. The "how (well)" investigation has only received little attention so far, even though it potentially provides useful information for a large variety of applications,such as sports training*. 
+
+### Dataset Creation
+
+Obtaining both datasets (training and testing) of the Weight Lifting Exercises Dataset.
+**The "classe" are: ' exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E)'**
+
+
+```{r WLED1}
+suppressMessages(library(caret))
+suppressMessages(library(rmarkdown))
+suppressMessages(library(rpart))
+suppressMessages(library(plyr))
+suppressMessages(library(knitr))
+suppressMessages(library(ggplot2))
+suppressMessages(library(dplyr))
+suppressMessages(library(ggplot2))
+suppressMessages(library(rattle))
+```
+Downloading and creating the raw dataset.
+```{r WLED2, echo=FALSE}
+suppressWarnings(download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile = "pml-training.csv", method = "curl"))
+suppressWarnings(download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",  destfile = "pml-testing.csv", method = "curl"))
+```
+```{r, echo= F}
+urlTrainRaw <- as.data.frame(read.csv("pml-training.csv"))
+urlTestRaw <- as.data.frame(read.csv("pml-testing.csv"))
+```
+By using the **str ()** and **summary ()** functions in the training raw database to know how the structure is divided and how many NA's. The value is too high for a data science search about *41%* of the dataset. If all NAs are excluded from the dataset, there will be a drastic reduction of variables that could compromise the results and the creation of machine learning algorithms. **Solution: Assign all NAs to the value = 0**.
+```{r}
+mean(is.na(urlTrainRaw))
+```
+### Cleaning up the dataset
+
+```{r}
+
+trainSet <- suppressWarnings(do.call(data.frame, lapply(urlTrainRaw, function(x) {
+  replace(x, is.infinite(x) | is.na(x), 0)
+  })
+))
+
+testSet <- suppressWarnings(do.call(data.frame, lapply(urlTestRaw, function(x) {
+  replace(x, is.infinite(x) | is.na(x), 0)
+  })
+))
+
+```
+Checking for the existence of NA's variables in training and testing datasets.
+```{r}
+sum(is.na(trainSet))
+sum(is.na(testSet))
+```
+
+### "What you should submit"
+"The goal of your project is to predict the manner in which they did the exercise. This is the *"classe"* variable in the training set. You may use any of the other variables to predict with."
+
+The **class** are divided in 5 levels - ***'[...]exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).'.***
+<http://groupware.les.inf.puc-rio.br/har>
+```{r}
+table(trainSet$classe)
+```
+## Building Our Prediction Model
+
+Because our training dataset has 41% of the data without information, we rank as a weak dataset for more reliable and accurate analysis. Thus, we prefer to use the Boosting and Random Forest methods for our predictions. Justification:
+  - *Boosting* - Take lots of (possible) weak predictors; Weight them and add them up and Get a stronger predictor.
+  - *Random Forest* - Bootstrap samples; At each split, bootstrap variables; Grow multiple trees and Accuracy.
+
+#### Data splitting and removing values with 0 ""
+
+```{r}
+set.seed(1234)
+nsv <- nearZeroVar(trainSet)
+trainSet <- trainSet[, -nsv]
+inTrain <- createDataPartition(y = trainSet$classe, p = 0.7, list = F)
+training <- trainSet[inTrain, ]
+testing <- trainSet[-inTrain, ]
+```
+#### RANDOM FORESTS
+
+Creating a variable using the training dataset against the cross validation data.  
+```{r}
+crossvalid <- trainControl(method = "cv", 5)
+modFit <- train(classe ~., data = training, method = "rf", trControl = crossvalid)
+
+modFit
+```
+
+Now, we need to compare the accuracy and out-of-sample error in training dataset. For this, we will create predict values.
+
+```{r}
+predFit <- predict(modFit, testing)
+confusionMatrix(testing$classe, predFit)
+```
+
+### Plotting "classe" variable
+
+```{r p, echo=F}
+p <- qplot(classe, col = classe, data = training)
+```
+```{r}
+plot(p)
+```
+
+### Plotting of the Decision Tree
+
+```{r, echo=F}
+modRpart <- train(classe ~., method = "rpart", data = training, trControl = crossvalid)
+fancyRpartPlot(modRpart$finalModel)
+```
+
+### BOOSTING
+
+```{r}
+
+gbmFit <- train(classe ~., method = "gbm", data = training, trControl = crossvalid, verbose = FALSE)
+gbmFit
+```
+Comparing the Boosting predictor against accuracy and out-of-sample error in training dataset.
+```{r}
+predGbm <- predict(gbmFit, testing)
+confusionMatrix(testing$classe, predGbm)
+```
+
+### Ploting preGbm variable
+
+```{r echo=F}
+qplot(predict(gbmFit, testing), classe, col=classe, data = testing)
+
+```
+
+## Conclusion
+
+The activity was quite challenging as the training dataset had to be completely restructured to achieve a machine learning algorithm that was applicable to other datasets.
+Even with 41% of all datasets being variable NAs, this made it difficult to analyze and further read data. The data present homogeneously and with weak oscillation in the predicted trials that we use Random Forest and Boosting. Thus, it is recommended that all research be redone and check the meter connections that were used in the survey so that there is not as much NA data in the dataset.
+
+
+
+### REFERENCES
+###### My sincere thanks to the following reaserch links that helped me a lot to understand
+###### the activity, as well as providing support for the creation of ideias in the elaboration
+###### of this assignment. Thank for all.
+###### https://rpubs.com/mgoodman10/80755; https://rpubs.com/jayneeee/practicalmachinelearning; 
+###### https://www.sqllit.com/blog/2016/06/09/machine-learning-predicting-quality-exercise/
+###### https://github.com/hamelsmu/datasciencecoursera/blob/master/PracticalMachineLearning/FinalProject.Rmd; https://www.r-bloggers.com/how-to-implement-random-forests-in-r/;
+###### https://stackoverflow.com/questions/32093980/r-remove-values-from-different-columns-in-a-data-frame AND https://www.biostars.org/p/233595/
+
